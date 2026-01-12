@@ -43,3 +43,48 @@ jobs:
         with:
           name: Zhiliao_${{ env.VERSION }}
           path: ${{ github.workspace }}/app/build/outputs/apk/release
+  # 新增：发布到 GitHub Release
+  release:
+    needs: build  # 依赖 build 任务完成
+    runs-on: ubuntu-latest
+    # 条件：仅在 master 分支的普通提交（非 PR）且不是跳过 CI 的情况下执行
+    if: |
+      github.event_name != 'pull_request' && 
+      github.ref == 'refs/heads/master' &&
+      !startsWith(github.event.head_commit.message, '[skip ci]')
+    
+    steps:
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Zhiliao_${{ needs.build.outputs.version }}
+          path: ./apks
+      
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: build-${{ github.run_id }}-${{ github.run_attempt }}
+          release_name: "Build ${{ github.run_number }} - ${{ env.RELEASE_NAME }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true  # 自动生成更新说明
+          body: |
+            自动构建版本 - ${{ env.RELEASE_NAME }}
+            
+            **构建信息:**
+            - 触发提交: ${{ github.sha }}
+            - 构建时间: ${{ github.event.head_commit.timestamp }}
+            - 工作流运行: #${{ github.run_number }}
+      
+      - name: Upload APK to Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./apks/*.apk
+          asset_name: Zhiliao_${{ env.VERSION }}.apk
+          asset_content_type: application/vnd.android.package-archive
